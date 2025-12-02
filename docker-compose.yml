@@ -11,9 +11,6 @@ services:
         max-file: "3"
     ports:
       - '5432:5432'
-    profiles:
-      - db
-      - debug
 
   elasticsearch:
     image: elasticsearch:8.7.1
@@ -32,9 +29,6 @@ services:
       timeout: 5s
       retries: 50
       start_period: 5s
-    profiles:
-      - es
-      - debug
 
   kibana:
     image: kibana:8.7.1
@@ -44,8 +38,6 @@ services:
       - ELASTICSEARCH_URL=http://elasticsearch:9200
     depends_on:
       - elasticsearch
-    profiles:
-      - kibana
 
   redis-node-1:
     image: redis:7.2
@@ -62,8 +54,6 @@ services:
       test: ["CMD", "redis-cli", "-p", "7000", "--user", "openvsx", "ping"]
       interval: 5s
       retries: 5
-    profiles:
-      - redis
 
   redis-node-2:
     image: redis:7.2
@@ -83,8 +73,6 @@ services:
       test: ["CMD", "redis-cli", "-p", "7000", "--user", "openvsx", "ping"]
       interval: 5s
       retries: 5
-    profiles:
-      - redis
 
   redis-node-3:
     image: redis:7.2
@@ -104,8 +92,6 @@ services:
       test: ["CMD", "redis-cli", "-p", "7000", "--user", "openvsx", "ping"]
       interval: 5s
       retries: 5
-    profiles:
-      - redis
 
   redis-node-4:
     image: redis:7.2
@@ -125,8 +111,6 @@ services:
       test: ["CMD", "redis-cli", "-p", "7000", "--user", "openvsx", "ping"]
       interval: 5s
       retries: 5
-    profiles:
-      - redis
 
   redis-node-5:
     image: redis:7.2
@@ -146,8 +130,6 @@ services:
       test: ["CMD", "redis-cli", "-p", "7000", "--user", "openvsx", "ping"]
       interval: 5s
       retries: 5
-    profiles:
-      - redis
 
   redis-node-6:
     image: redis:7.2
@@ -167,8 +149,6 @@ services:
       test: ["CMD", "redis-cli", "-p", "7000", "--user", "openvsx", "ping"]
       interval: 5s
       retries: 5
-    profiles:
-      - redis
 
   redis-cluster-init:
     image: redis:7.2
@@ -188,15 +168,11 @@ services:
       redis-node-1:7000 redis-node-2:7000 redis-node-3:7000 
       redis-node-4:7000 redis-node-5:7000 redis-node-6:7000 
       --cluster-replicas 1"
-    profiles:
-      - redis
 
   redisinsight:
     image: redis/redisinsight
     ports:
       - '5540:5540'
-    profiles:
-      - redisinsight
 
   server:
     image: eclipse-temurin:25-jdk
@@ -215,9 +191,6 @@ services:
       timeout: 5s
       retries: 50
       start_period: 5s
-    profiles:
-      - openvsx
-      - backend
     
   webui:
     image: node:18
@@ -229,9 +202,6 @@ services:
       - 3000:3000
     depends_on:
       - server
-    profiles:
-      - openvsx
-      - frontend
 
   cli:
     image: node:18
@@ -243,6 +213,3 @@ services:
       - server
     environment:
       - OVSX_REGISTRY_URL=http://server:8080
-    profiles:
-      - openvsx
-      - commandline

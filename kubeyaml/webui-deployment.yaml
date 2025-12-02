@@ -1,0 +1,43 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  annotations:
+    kompose.cmd: C:\Users\mikie\AppData\Local\Microsoft\WinGet\Packages\Kubernetes.kompose_Microsoft.Winget.Source_8wekyb3d8bbwe\kompose.exe convert -f ..\docker-compose.yml
+    kompose.version: 1.37.0 (fb0539e64)
+  labels:
+    io.kompose.service: webui
+  name: webui
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      io.kompose.service: webui
+  strategy:
+    type: Recreate
+  template:
+    metadata:
+      annotations:
+        kompose.cmd: C:\Users\mikie\AppData\Local\Microsoft\WinGet\Packages\Kubernetes.kompose_Microsoft.Winget.Source_8wekyb3d8bbwe\kompose.exe convert -f ..\docker-compose.yml
+        kompose.version: 1.37.0 (fb0539e64)
+      labels:
+        io.kompose.service: webui
+    spec:
+      containers:
+        - args:
+            - sh
+            - -c
+            - yarn && yarn build && yarn build:default && yarn watch & yarn watch:default & yarn start:default
+          image: node:18
+          name: webui
+          ports:
+            - containerPort: 3000
+              protocol: TCP
+          volumeMounts:
+            - mountPath: /app
+              name: webui-cm0
+          workingDir: /app
+      restartPolicy: Always
+      volumes:
+        - configMap:
+            name: webui-cm0
+          name: webui-cm0

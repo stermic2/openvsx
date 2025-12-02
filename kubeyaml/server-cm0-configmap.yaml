@@ -1,0 +1,618 @@
+apiVersion: v1
+data:
+  .gitignore: |
+    /bin/
+    /build/
+    .gradle/
+    .idea/
+    .settings/
+    .classpath
+    .project
+    DEPENDENCIES
+    /src/dev/resources/application-ovsx.properties
+  Dockerfile: |
+    # syntax=docker/dockerfile:1
+    FROM gradle:jdk-25-and-25 AS builder
+
+    # Copy sources
+    WORKDIR /home/gradle
+    COPY --chown=gradle:gradle gradlew *.gradle gradle.properties ./
+    COPY --chown=gradle:gradle gradle ./gradle/
+    COPY --chown=gradle:gradle src ./src/
+
+    ENV CI=true
+
+    # Build the server application
+    RUN --mount=type=secret,id=dv-key,env=DEVELOCITY_ACCESS_KEY \
+        ./gradlew --no-daemon assemble
+
+    FROM eclipse-temurin:25-jdk
+
+    # Create user openvsx and set up home directory
+    RUN groupadd -r openvsx && useradd --no-log-init -r -g openvsx openvsx
+    RUN mkdir -p /home/openvsx/server && chown -R openvsx:openvsx /home/openvsx
+    USER openvsx
+    WORKDIR /home/openvsx/server
+
+    # Copy and unpack the server archive
+    COPY --chown=openvsx:openvsx --from=builder /home/gradle/build/libs/openvsx-server.jar /home/openvsx/
+    RUN jar -xf /home/openvsx/openvsx-server.jar && rm /home/openvsx/openvsx-server.jar
+
+    # Copy the start script and make it executable
+    COPY --chown=openvsx:openvsx scripts/run-server.sh ./
+    RUN chmod u+x run-server.sh
+
+    # Run sthe start script
+    ENTRYPOINT ["./run-server.sh"]
+  build.gradle: "buildscript {\n    repositories {\n        mavenCentral()\n    }\n    dependencies {\n        classpath \"org.hibernate.orm:hibernate-gradle-plugin:6.2.2.Final\"\n        classpath \"com.adarshr.test-logger:com.adarshr.test-logger.gradle.plugin:4.0.0\"\n    }\n}\nplugins {\n    id 'jacoco'\n    id 'org.jooq.jooq-codegen-gradle' version '3.19.26'\n    id 'de.undercouch.download' version '5.4.0'\n    id 'org.springframework.boot' version '3.5.6'\n    id 'io.spring.dependency-management' version '1.1.0'\n    id 'io.gatling.gradle' version '3.9.5'\n    id 'java'\n    id 'maven-publish'\n}\napply plugin: 'org.hibernate.orm'\napply plugin: 'com.adarshr.test-logger'\n\ndef jooqSrcDir = 'src/main/jooq-gen'\ndef versions = [\n    java: '25',\n    flyway: '9.19.1',\n    springdoc: '2.8.13',\n    gcloud: '2.50.0',\n    azure: '12.23.0',\n    aws: '2.29.29',\n    junit: '5.9.2',\n    testcontainers: '1.19.3',\n    jackson: '2.15.2',\n    woodstox: '6.4.0',\n    jobrunr: '7.5.0',\n    bucket4j: '0.12.7',\n    bucket4j_redis: '8.10.1',\n    tika: '3.1.0',\n    bouncycastle: '1.80',\n    commons_lang3: '3.12.0',\n    jaxb_api: '2.3.1',\n    jaxb_impl: '2.3.8',\n    gatling: '3.9.5',\n    loki4j: '1.4.2',\n    jedis: '6.2.0'\n]\next['junit-jupiter.version'] = versions.junit\njava {\n    sourceCompatibility = versions.java\n}\n\nrepositories {\n    mavenCentral()\n}\n\n// The 'dev' source set contains the development setup. These files are not included in the jar.\nsourceSets {\n    main {\n        java.srcDirs += jooqSrcDir\n    }\n    dev {\n        compileClasspath += main.output\n        runtimeClasspath += main.output\n    }\n}\n\nconfigurations {\n    devImplementation.extendsFrom implementation\n    devRuntimeOnly.extendsFrom runtimeOnly\n\n    gatling.exclude group: \"io.gatling.highcharts\", module: \"gatling-charts-highcharts\"\n}\n\ndependencies {\n    implementation('org.springframework.boot:spring-boot-starter-web')\n    implementation 'org.springframework.boot:spring-boot-starter-jetty'\n    modules {\n        module(\"org.springframework.boot:spring-boot-starter-tomcat\") {\n            replacedBy(\"org.springframework.boot:spring-boot-starter-jetty\")\n        }\n    }\n    implementation \"org.springframework.boot:spring-boot-starter-validation\"\n    implementation \"org.springframework.boot:spring-boot-starter-jooq\"\n    implementation \"org.springframework.boot:spring-boot-starter-data-jpa\"\n    implementation \"org.springframework.boot:spring-boot-starter-data-elasticsearch\"\n    implementation \"org.springframework.boot:spring-boot-starter-data-redis\"\n    implementation \"org.springframework.boot:spring-boot-starter-security\"\n    implementation \"org.springframework.boot:spring-boot-starter-actuator\"\n    implementation \"org.springframework.boot:spring-boot-starter-cache\"\n    implementation \"org.springframework.boot:spring-boot-starter-aop\"\n    implementation \"org.springframework.boot:spring-boot-starter-mail\"\n    implementation \"org.springframework.boot:spring-boot-starter-thymeleaf\"\n    implementation \"org.springframework.security:spring-security-oauth2-client\"\n    implementation \"org.springframework.security:spring-security-oauth2-jose\"\n    implementation \"org.springframework.session:spring-session-jdbc\"\n    implementation \"org.springframework.retry:spring-retry\"\n    implementation \"org.bouncycastle:bcpkix-jdk18on:${versions.bouncycastle}\"\n    implementation \"com.github.ben-manes.caffeine:caffeine\"\n    implementation 'com.github.ben-manes.caffeine:jcache'\n    implementation \"redis.clients:jedis:${versions.jedis}\"\n    implementation \"com.giffing.bucket4j.spring.boot.starter:bucket4j-spring-boot-starter:${versions.bucket4j}\"\n    implementation \"com.bucket4j:bucket4j-redis:${versions.bucket4j_redis}\"\n    implementation \"org.jobrunr:jobrunr-spring-boot-3-starter:${versions.jobrunr}\"\n    implementation \"org.flywaydb:flyway-core:${versions.flyway}\"\n    implementation \"com.google.cloud:google-cloud-storage:${versions.gcloud}\"\n    implementation \"com.azure:azure-storage-blob:${versions.azure}\"\n    implementation \"software.amazon.awssdk:s3:${versions.aws}\"\n    implementation \"software.amazon.awssdk:sts:${versions.aws}\"\n    implementation \"org.springdoc:springdoc-openapi-starter-webmvc-ui:${versions.springdoc}\"\n    implementation \"com.fasterxml.jackson.core:jackson-core:${versions.jackson}\"\n    implementation \"com.fasterxml.jackson.core:jackson-annotations:${versions.jackson}\"\n    implementation \"com.fasterxml.jackson.core:jackson-databind:${versions.jackson}\"\n    implementation \"com.fasterxml.jackson.module:jackson-module-jaxb-annotations:${versions.jackson}\"\n    implementation \"com.fasterxml.woodstox:woodstox-core:${versions.woodstox}\"\n    implementation \"com.fasterxml.jackson.dataformat:jackson-dataformat-xml:${versions.jackson}\"\n    implementation \"javax.xml.bind:jaxb-api:${versions.jaxb_api}\"\n    implementation \"com.sun.xml.bind:jaxb-impl:${versions.jaxb_impl}\"\n    implementation \"org.apache.commons:commons-lang3:${versions.commons_lang3}\"\n    implementation \"org.apache.httpcomponents.client5:httpclient5\"\n    implementation \"org.apache.tika:tika-core:${versions.tika}\"\n    implementation \"com.github.loki4j:loki-logback-appender:${versions.loki4j}\"\n    implementation \"io.micrometer:micrometer-tracing\"\n    implementation \"io.micrometer:micrometer-tracing-bridge-otel\"\n    implementation \"io.opentelemetry:opentelemetry-exporter-zipkin\"\n    runtimeOnly \"io.micrometer:micrometer-registry-prometheus\"\n    runtimeOnly \"org.postgresql:postgresql\"\n    jooqCodegen \"org.postgresql:postgresql\"\n\n    devRuntimeOnly \"org.springframework.boot:spring-boot-devtools\"\n\n    testImplementation(\"org.springframework.boot:spring-boot-starter-test\") {\n        exclude group: 'org.junit.vintage', module: 'junit-vintage-engine'\n    }\n    testImplementation \"org.springframework.security:spring-security-test\"\n    testImplementation \"org.testcontainers:elasticsearch:${versions.testcontainers}\"\n    testImplementation \"org.testcontainers:localstack:${versions.testcontainers}\"\n    testImplementation \"org.testcontainers:junit-jupiter:${versions.testcontainers}\"\n    testImplementation \"org.junit.jupiter:junit-jupiter-api:${versions.junit}\"\n    testRuntimeOnly \"org.junit.jupiter:junit-jupiter-engine:${versions.junit}\"\n    testRuntimeOnly \"org.testcontainers:postgresql:${versions.testcontainers}\"\n    \n    gatling \"io.gatling:gatling-core:${versions.gatling}\"\n    gatling \"io.gatling:gatling-app:${versions.gatling}\"\n}\n\njooq {\n    configuration {\n        logging = \"WARN\"\n        jdbc {\n            driver = 'org.postgresql.Driver'\n            url = 'jdbc:postgresql://localhost:5432/postgres'\n            user = 'openvsx'\n            password = 'openvsx'\n        }\n        generator {\n            name = 'org.jooq.codegen.DefaultGenerator'\n            database {\n                name = 'org.jooq.meta.postgres.PostgresDatabase'\n                inputSchema = 'public'\n                includes = '.*'\n                excludes = ''\n            }\n            target {\n                packageName = 'org.eclipse.openvsx.jooq'\n                directory = jooqSrcDir\n            }\n            generate {\n                implicitJoinPathsToOne = false\n                implicitJoinPathsToMany = false\n                implicitJoinPathUnusedConstructors = false\n                implicitJoinPathsUseTableNameForUnambiguousFKs = false\n                implicitJoinPathsAsKotlinProperties = false\n            }\n        }\n    }\n}\n\npublishing {\n    publications {\n        maven(MavenPublication) {\n            artifact ('scripts/run-server.sh') \n            artifact bootJar\n        }\n    }\n}\n\ntask runServer(type: JavaExec) {\n//    jvmArgs = ['-Xverify:none']\n    classpath = sourceSets.dev.runtimeClasspath\n    mainClass = 'org.eclipse.openvsx.RegistryApplication'\n}\n\ntest {\n    useJUnitPlatform()\n}\n\ntask unitTests(type: Test) {\n    description = 'Runs unit tests (excluding integration tests).'\n    group = 'verification'\n    testClassesDirs = sourceSets.test.output.classesDirs\n    classpath = sourceSets.test.runtimeClasspath\n    useJUnitPlatform()\n    exclude 'org/eclipse/openvsx/IntegrationTest.class'\n    exclude 'org/eclipse/openvsx/cache/CacheServiceTest.class'\n    exclude 'org/eclipse/openvsx/repositories/RepositoryServiceSmokeTest.class'\n    exclude 'org/eclipse/openvsx/storage/AwsStorageServiceIntegrationTest.class'\n}\n\ntask s3IntegrationTests(type: Test) {\n    description = 'Runs S3 integration tests using LocalStack (requires Docker/Podman).'\n    group = 'verification'\n    testClassesDirs = sourceSets.test.output.classesDirs\n    classpath = sourceSets.test.runtimeClasspath\n    useJUnitPlatform()\n    include 'org/eclipse/openvsx/storage/AwsStorageServiceIntegrationTest.class'\n\n    // Set system properties for test configuration\n    systemProperty 'spring.profiles.active', 's3-integration'\n}\n\njacocoTestReport {\n    reports {\n        xml.required = true\n    }\n\n    dependsOn test // tests are required to run before generating the report\n}\n\napply from: 'dependencies.gradle'\napply from: 'test-extensions.gradle'\n"
+  dependencies.gradle: |
+    import java.nio.file.Path
+
+    task listDependencies {
+        doLast {
+            def prefix = Path.of(System.env.GRADLE_USER_HOME, 'caches', 'modules-2', 'files-2.1')
+            def list = new ArrayList<String>()
+            sourceSets.main.runtimeClasspath.forEach{f ->
+                def path = f.toPath()
+                if (path.startsWith(prefix)) {
+                    def relative = prefix.relativize(path)
+                    list.add("${relative.getName(0)}:${relative.getName(1)}:${relative.getName(2)}")
+                }
+            }
+            list.sort()
+            mkdir "${buildDir}/dependencies"
+            new File("${buildDir}/dependencies/list.txt").write(list.join('\n'))
+        }
+    }
+  gradle.properties: |
+    org.gradle.parallel=true
+    org.gradle.vfs.watch=true
+    org.gradle.caching=true
+    # Needs for Red Hat's Project Manipulation Extension (PME) work
+    group=org.eclipse.openvsx
+  gradlew: |
+    #!/bin/sh
+
+    #
+    # Copyright © 2015-2021 the original authors.
+    #
+    # Licensed under the Apache License, Version 2.0 (the "License");
+    # you may not use this file except in compliance with the License.
+    # You may obtain a copy of the License at
+    #
+    #      https://www.apache.org/licenses/LICENSE-2.0
+    #
+    # Unless required by applicable law or agreed to in writing, software
+    # distributed under the License is distributed on an "AS IS" BASIS,
+    # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+    # See the License for the specific language governing permissions and
+    # limitations under the License.
+    #
+
+    ##############################################################################
+    #
+    #   Gradle start up script for POSIX generated by Gradle.
+    #
+    #   Important for running:
+    #
+    #   (1) You need a POSIX-compliant shell to run this script. If your /bin/sh is
+    #       noncompliant, but you have some other compliant shell such as ksh or
+    #       bash, then to run this script, type that shell name before the whole
+    #       command line, like:
+    #
+    #           ksh Gradle
+    #
+    #       Busybox and similar reduced shells will NOT work, because this script
+    #       requires all of these POSIX shell features:
+    #         * functions;
+    #         * expansions «$var», «${var}», «${var:-default}», «${var+SET}»,
+    #           «${var#prefix}», «${var%suffix}», and «$( cmd )»;
+    #         * compound commands having a testable exit status, especially «case»;
+    #         * various built-in commands including «command», «set», and «ulimit».
+    #
+    #   Important for patching:
+    #
+    #   (2) This script targets any POSIX shell, so it avoids extensions provided
+    #       by Bash, Ksh, etc; in particular arrays are avoided.
+    #
+    #       The "traditional" practice of packing multiple parameters into a
+    #       space-separated string is a well documented source of bugs and security
+    #       problems, so this is (mostly) avoided, by progressively accumulating
+    #       options in "$@", and eventually passing that to Java.
+    #
+    #       Where the inherited environment variables (DEFAULT_JVM_OPTS, JAVA_OPTS,
+    #       and GRADLE_OPTS) rely on word-splitting, this is performed explicitly;
+    #       see the in-line comments for details.
+    #
+    #       There are tweaks for specific operating systems such as AIX, CygWin,
+    #       Darwin, MinGW, and NonStop.
+    #
+    #   (3) This script is generated from the Groovy template
+    #       https://github.com/gradle/gradle/blob/HEAD/subprojects/plugins/src/main/resources/org/gradle/api/internal/plugins/unixStartScript.txt
+    #       within the Gradle project.
+    #
+    #       You can find Gradle at https://github.com/gradle/gradle/.
+    #
+    ##############################################################################
+
+    # Attempt to set APP_HOME
+
+    # Resolve links: $0 may be a link
+    app_path=$0
+
+    # Need this for daisy-chained symlinks.
+    while
+        APP_HOME=${app_path%"${app_path##*/}"}  # leaves a trailing /; empty if no leading path
+        [ -h "$app_path" ]
+    do
+        ls=$( ls -ld "$app_path" )
+        link=${ls#*' -> '}
+        case $link in             #(
+          /*)   app_path=$link ;; #(
+          *)    app_path=$APP_HOME$link ;;
+        esac
+    done
+
+    # This is normally unused
+    # shellcheck disable=SC2034
+    APP_BASE_NAME=${0##*/}
+    # Discard cd standard output in case $CDPATH is set (https://github.com/gradle/gradle/issues/25036)
+    APP_HOME=$( cd "${APP_HOME:-./}" > /dev/null && pwd -P ) || exit
+
+    # Use the maximum available, or set MAX_FD != -1 to use that value.
+    MAX_FD=maximum
+
+    warn () {
+        echo "$*"
+    } >&2
+
+    die () {
+        echo
+        echo "$*"
+        echo
+        exit 1
+    } >&2
+
+    # OS specific support (must be 'true' or 'false').
+    cygwin=false
+    msys=false
+    darwin=false
+    nonstop=false
+    case "$( uname )" in                #(
+      CYGWIN* )         cygwin=true  ;; #(
+      Darwin* )         darwin=true  ;; #(
+      MSYS* | MINGW* )  msys=true    ;; #(
+      NONSTOP* )        nonstop=true ;;
+    esac
+
+    CLASSPATH=$APP_HOME/gradle/wrapper/gradle-wrapper.jar
+
+
+    # Determine the Java command to use to start the JVM.
+    if [ -n "$JAVA_HOME" ] ; then
+        if [ -x "$JAVA_HOME/jre/sh/java" ] ; then
+            # IBM's JDK on AIX uses strange locations for the executables
+            JAVACMD=$JAVA_HOME/jre/sh/java
+        else
+            JAVACMD=$JAVA_HOME/bin/java
+        fi
+        if [ ! -x "$JAVACMD" ] ; then
+            die "ERROR: JAVA_HOME is set to an invalid directory: $JAVA_HOME
+
+    Please set the JAVA_HOME variable in your environment to match the
+    location of your Java installation."
+        fi
+    else
+        JAVACMD=java
+        if ! command -v java >/dev/null 2>&1
+        then
+            die "ERROR: JAVA_HOME is not set and no 'java' command could be found in your PATH.
+
+    Please set the JAVA_HOME variable in your environment to match the
+    location of your Java installation."
+        fi
+    fi
+
+    # Increase the maximum file descriptors if we can.
+    if ! "$cygwin" && ! "$darwin" && ! "$nonstop" ; then
+        case $MAX_FD in #(
+          max*)
+            # In POSIX sh, ulimit -H is undefined. That's why the result is checked to see if it worked.
+            # shellcheck disable=SC3045
+            MAX_FD=$( ulimit -H -n ) ||
+                warn "Could not query maximum file descriptor limit"
+        esac
+        case $MAX_FD in  #(
+          '' | soft) :;; #(
+          *)
+            # In POSIX sh, ulimit -n is undefined. That's why the result is checked to see if it worked.
+            # shellcheck disable=SC3045
+            ulimit -n "$MAX_FD" ||
+                warn "Could not set maximum file descriptor limit to $MAX_FD"
+        esac
+    fi
+
+    # Collect all arguments for the java command, stacking in reverse order:
+    #   * args from the command line
+    #   * the main class name
+    #   * -classpath
+    #   * -D...appname settings
+    #   * --module-path (only if needed)
+    #   * DEFAULT_JVM_OPTS, JAVA_OPTS, and GRADLE_OPTS environment variables.
+
+    # For Cygwin or MSYS, switch paths to Windows format before running java
+    if "$cygwin" || "$msys" ; then
+        APP_HOME=$( cygpath --path --mixed "$APP_HOME" )
+        CLASSPATH=$( cygpath --path --mixed "$CLASSPATH" )
+
+        JAVACMD=$( cygpath --unix "$JAVACMD" )
+
+        # Now convert the arguments - kludge to limit ourselves to /bin/sh
+        for arg do
+            if
+                case $arg in                                #(
+                  -*)   false ;;                            # don't mess with options #(
+                  /?*)  t=${arg#/} t=/${t%%/*}              # looks like a POSIX filepath
+                        [ -e "$t" ] ;;                      #(
+                  *)    false ;;
+                esac
+            then
+                arg=$( cygpath --path --ignore --mixed "$arg" )
+            fi
+            # Roll the args list around exactly as many times as the number of
+            # args, so each arg winds up back in the position where it started, but
+            # possibly modified.
+            #
+            # NB: a `for` loop captures its iteration list before it begins, so
+            # changing the positional parameters here affects neither the number of
+            # iterations, nor the values presented in `arg`.
+            shift                   # remove old arg
+            set -- "$@" "$arg"      # push replacement arg
+        done
+    fi
+
+
+    # Add default JVM options here. You can also use JAVA_OPTS and GRADLE_OPTS to pass JVM options to this script.
+    DEFAULT_JVM_OPTS='"-Xmx64m" "-Xms64m"'
+
+    # Collect all arguments for the java command;
+    #   * $DEFAULT_JVM_OPTS, $JAVA_OPTS, and $GRADLE_OPTS can contain fragments of
+    #     shell script including quotes and variable substitutions, so put them in
+    #     double quotes to make sure that they get re-expanded; and
+    #   * put everything else in single quotes, so that it's not re-expanded.
+
+    set -- \
+            "-Dorg.gradle.appname=$APP_BASE_NAME" \
+            -classpath "$CLASSPATH" \
+            org.gradle.wrapper.GradleWrapperMain \
+            "$@"
+
+    # Stop when "xargs" is not available.
+    if ! command -v xargs >/dev/null 2>&1
+    then
+        die "xargs is not available"
+    fi
+
+    # Use "xargs" to parse quoted args.
+    #
+    # With -n1 it outputs one arg per line, with the quotes and backslashes removed.
+    #
+    # In Bash we could simply go:
+    #
+    #   readarray ARGS < <( xargs -n1 <<<"$var" ) &&
+    #   set -- "${ARGS[@]}" "$@"
+    #
+    # but POSIX shell has neither arrays nor command substitution, so instead we
+    # post-process each arg (as a line of input to sed) to backslash-escape any
+    # character that might be a shell metacharacter, then use eval to reverse
+    # that process (while maintaining the separation between arguments), and wrap
+    # the whole thing up as a single "set" statement.
+    #
+    # This will of course break if any of these variables contains a newline or
+    # an unmatched quote.
+    #
+
+    eval "set -- $(
+            printf '%s\n' "$DEFAULT_JVM_OPTS $JAVA_OPTS $GRADLE_OPTS" |
+            xargs -n1 |
+            sed ' s~[^-[:alnum:]+,./:=@_]~\\&~g; ' |
+            tr '\n' ' '
+        )" '"$@"'
+
+    exec "$JAVACMD" "$@"
+  gradlew.bat: |
+    @rem
+    @rem Copyright 2015 the original author or authors.
+    @rem
+    @rem Licensed under the Apache License, Version 2.0 (the "License");
+    @rem you may not use this file except in compliance with the License.
+    @rem You may obtain a copy of the License at
+    @rem
+    @rem      https://www.apache.org/licenses/LICENSE-2.0
+    @rem
+    @rem Unless required by applicable law or agreed to in writing, software
+    @rem distributed under the License is distributed on an "AS IS" BASIS,
+    @rem WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+    @rem See the License for the specific language governing permissions and
+    @rem limitations under the License.
+    @rem
+
+    @if "%DEBUG%"=="" @echo off
+    @rem ##########################################################################
+    @rem
+    @rem  Gradle startup script for Windows
+    @rem
+    @rem ##########################################################################
+
+    @rem Set local scope for the variables with windows NT shell
+    if "%OS%"=="Windows_NT" setlocal
+
+    set DIRNAME=%~dp0
+    if "%DIRNAME%"=="" set DIRNAME=.
+    @rem This is normally unused
+    set APP_BASE_NAME=%~n0
+    set APP_HOME=%DIRNAME%
+
+    @rem Resolve any "." and ".." in APP_HOME to make it shorter.
+    for %%i in ("%APP_HOME%") do set APP_HOME=%%~fi
+
+    @rem Add default JVM options here. You can also use JAVA_OPTS and GRADLE_OPTS to pass JVM options to this script.
+    set DEFAULT_JVM_OPTS="-Xmx64m" "-Xms64m"
+
+    @rem Find java.exe
+    if defined JAVA_HOME goto findJavaFromJavaHome
+
+    set JAVA_EXE=java.exe
+    %JAVA_EXE% -version >NUL 2>&1
+    if %ERRORLEVEL% equ 0 goto execute
+
+    echo.
+    echo ERROR: JAVA_HOME is not set and no 'java' command could be found in your PATH.
+    echo.
+    echo Please set the JAVA_HOME variable in your environment to match the
+    echo location of your Java installation.
+
+    goto fail
+
+    :findJavaFromJavaHome
+    set JAVA_HOME=%JAVA_HOME:"=%
+    set JAVA_EXE=%JAVA_HOME%/bin/java.exe
+
+    if exist "%JAVA_EXE%" goto execute
+
+    echo.
+    echo ERROR: JAVA_HOME is set to an invalid directory: %JAVA_HOME%
+    echo.
+    echo Please set the JAVA_HOME variable in your environment to match the
+    echo location of your Java installation.
+
+    goto fail
+
+    :execute
+    @rem Setup the command line
+
+    set CLASSPATH=%APP_HOME%\gradle\wrapper\gradle-wrapper.jar
+
+
+    @rem Execute Gradle
+    "%JAVA_EXE%" %DEFAULT_JVM_OPTS% %JAVA_OPTS% %GRADLE_OPTS% "-Dorg.gradle.appname=%APP_BASE_NAME%" -classpath "%CLASSPATH%" org.gradle.wrapper.GradleWrapperMain %*
+
+    :end
+    @rem End local scope for the variables with windows NT shell
+    if %ERRORLEVEL% equ 0 goto mainEnd
+
+    :fail
+    rem Set variable GRADLE_EXIT_CONSOLE if you need the _script_ return code instead of
+    rem the _cmd.exe /c_ return code!
+    set EXIT_CODE=%ERRORLEVEL%
+    if %EXIT_CODE% equ 0 set EXIT_CODE=1
+    if not ""=="%GRADLE_EXIT_CONSOLE%" exit %EXIT_CODE%
+    exit /b %EXIT_CODE%
+
+    :mainEnd
+    if "%OS%"=="Windows_NT" endlocal
+
+    :omega
+  settings.gradle: |
+    plugins {
+        id 'com.gradle.develocity' version '3.19.1'
+        id 'com.gradle.common-custom-user-data-gradle-plugin' version '2.1'
+    }
+
+    def isCI = System.getenv('CI') != null // adjust to your CI provider
+
+    develocity {
+        server = "https://develocity-staging.eclipse.org"
+        projectId = "openvsx" // adjust to your project identifier / descriptor
+        buildScan {
+            uploadInBackground = !isCI
+            publishing.onlyIf { it.isAuthenticated() }
+            obfuscation {
+                ipAddresses { addresses -> addresses.collect { address -> "0.0.0.0" } }
+            }
+        }
+    }
+
+    buildCache {
+        remote(develocity.buildCache) {
+            enabled = true
+            push = isCI
+        }
+    }
+
+
+    rootProject.name = 'openvsx-server'
+  test-extensions.gradle: |
+    task downloadTestExtensions {
+        doLast {
+            download.run {
+                src "https://open-vsx.org/api/vscode/sql/1.54.1/file/vscode.sql-1.54.1.vsix"
+                dest "${buildDir}/test-extensions-builtin/vscode.sql-1.54.1.vsix"
+            }
+            download.run {
+                src "https://open-vsx.org/api/vscode/powershell/1.54.1/file/vscode.powershell-1.54.1.vsix"
+                dest "${buildDir}/test-extensions-builtin/vscode.powershell-1.54.1.vsix"
+            }
+            download.run {
+                src "https://open-vsx.org/api/vscode/docker/1.54.1/file/vscode.docker-1.54.1.vsix"
+                dest "${buildDir}/test-extensions-builtin/vscode.docker-1.54.1.vsix"
+            }
+            download.run {
+                src "https://open-vsx.org/api/vscode/yaml/1.54.1/file/vscode.yaml-1.54.1.vsix"
+                dest "${buildDir}/test-extensions-builtin/vscode.yaml-1.54.1.vsix"
+            }
+            download.run {
+                src "https://github.com/microsoft/vscode-python/releases/download/2019.9.34911/ms-python-release.vsix"
+                dest "${buildDir}/test-extensions/ms-python.python-2019.9.34911.vsix"
+            }
+            download.run {
+                src "https://github.com/microsoft/vscode-python/releases/download/2019.10.41019/ms-python-release.vsix"
+                dest "${buildDir}/test-extensions/ms-python.python-2019.10.41019.vsix"
+            }
+            download.run {
+                src "https://github.com/microsoft/vscode-python/releases/download/2019.10.44104/ms-python-release.vsix"
+                dest "${buildDir}/test-extensions/ms-python.python-2019.10.44104.vsix"
+            }
+            download.run {
+                src "https://github.com/redhat-developer/vscode-java/releases/download/v1.15.0/redhat.java@darwin-arm64-1.15.0.vsix"
+                dest "${buildDir}/test-extensions/redhat.java@darwin-arm64-1.15.0.vsix"
+            }
+            download.run {
+                src "https://github.com/redhat-developer/vscode-java/releases/download/v1.15.0/redhat.java@darwin-x64-1.15.0.vsix"
+                dest "${buildDir}/test-extensions/redhat.java@darwin-x64-1.15.0.vsix"
+            }
+            download.run {
+                src "https://github.com/redhat-developer/vscode-java/releases/download/v1.15.0/redhat.java@linux-arm64-1.15.0.vsix"
+                dest "${buildDir}/test-extensions/redhat.java@linux-arm64-1.15.0.vsix"
+            }
+            download.run {
+                src "https://github.com/redhat-developer/vscode-java/releases/download/v1.15.0/redhat.java@linux-x64-1.15.0.vsix"
+                dest "${buildDir}/test-extensions/redhat.java@linux-x64-1.15.0.vsix"
+            }
+            download.run {
+                src "https://github.com/redhat-developer/vscode-java/releases/download/v1.15.0/redhat.java@win32-x64-1.15.0.vsix"
+                dest "${buildDir}/test-extensions/redhat.java@win32-x64-1.15.0.vsix"
+            }
+            download.run {
+                src "https://github.com/redhat-developer/vscode-java/releases/download/v1.15.0/java-1.15.0.vsix"
+                dest "${buildDir}/test-extensions/redhat.java@win32-x64-1.15.0.vsix"
+            }
+            download.run {
+                src "https://github.com/HookyQR/VSCodeBeautify/releases/download/v0.1.3/beautify-0.1.3.vsix"
+                dest "${buildDir}/test-extensions/HookyQR.beautify-0.1.3.vsix"
+            }
+            download.run {
+                src "https://github.com/eamodio/vscode-gitlens/releases/download/v10.0.1/gitlens-10.0.1.vsix"
+                dest "${buildDir}/test-extensions/eamodio.gitlens-10.0.1.vsix"
+            }
+            download.run {
+                src "https://github.com/eamodio/vscode-gitlens/releases/download/v10.1.0/gitlens-10.1.0.vsix"
+                dest "${buildDir}/test-extensions/eamodio.gitlens-10.1.0.vsix"
+            }
+            download.run {
+                src "https://github.com/eamodio/vscode-gitlens/releases/download/v10.1.1/gitlens-10.1.1.vsix"
+                dest "${buildDir}/test-extensions/eamodio.gitlens-10.1.1.vsix"
+            }
+            download.run {
+                src "https://github.com/vuejs/vetur/releases/download/v0.22.5/vetur-0.22.5.vsix"
+                dest "${buildDir}/test-extensions/octref.vetur-0.22.5.vsix"
+            }
+            download.run {
+                src "https://github.com/vuejs/vetur/releases/download/v0.22.6/vetur-0.22.6.vsix"
+                dest "${buildDir}/test-extensions/octref.vetur-0.22.6.vsix"
+            }
+            download.run {
+                src "https://github.com/Wscats/omi-snippets/releases/download/2.03/eno-2.0.3.vsix"
+                dest "${buildDir}/test-extensions/Wscats.eno-2.0.3.vsix"
+            }
+            download.run {
+                src "https://github.com/microsoft/vscode-docker/releases/download/v0.8.1/vscode-docker-0.8.1.vsix"
+                dest "${buildDir}/test-extensions/ms-azuretools.vscode-docker-0.8.1.vsix"
+            }
+            download.run {
+                src "https://github.com/microsoft/vscode-docker/releases/download/v0.8.2/vscode-docker-0.8.2.vsix"
+                dest "${buildDir}/test-extensions/ms-azuretools.vscode-docker-0.8.2.vsix"
+            }
+            download.run {
+                src "https://github.com/ritwickdey/vscode-live-server/releases/download/v5.6.1/LiveServer-v5.6.1-linux.vsix"
+                dest "${buildDir}/test-extensions/ritwickdey.live-server-5.6.1.vsix"
+            }
+            download.run {
+                src "https://github.com/felixfbecker/vscode-php-intellisense/releases/download/v2.3.10/php-intellisense.vsix"
+                dest "${buildDir}/test-extensions/felixfbecker.php-intellisense-2.3.10.vsix"
+            }
+            download.run {
+                src "https://github.com/felixfbecker/vscode-php-intellisense/releases/download/v2.3.11/php-intellisense.vsix"
+                dest "${buildDir}/test-extensions/felixfbecker.php-intellisense-2.3.11.vsix"
+            }
+            download.run {
+                src "https://github.com/felixfbecker/vscode-php-intellisense/releases/download/v2.3.12/php-intellisense.vsix"
+                dest "${buildDir}/test-extensions/felixfbecker.php-intellisense-2.3.12.vsix"
+            }
+            download.run {
+                src "https://github.com/felixfbecker/vscode-php-intellisense/releases/download/v2.3.13/php-intellisense.vsix"
+                dest "${buildDir}/test-extensions/felixfbecker.php-intellisense-2.3.13.vsix"
+            }
+            download.run {
+                src "https://github.com/formulahendry/vscode-code-runner/releases/download/0.9.14/code-runner-0.9.14.vsix"
+                dest "${buildDir}/test-extensions/formulahendry.code-runner-0.9.14.vsix"
+            }
+            download.run {
+                src "https://github.com/redhat-developer/vscode-yaml/releases/download/0.4.0/redhat.vscode-yaml-0.4.0.vsix"
+                dest "${buildDir}/test-extensions/redhat.vscode-yaml-0.4.0.vsix"
+            }
+            download.run {
+                src "https://github.com/redhat-developer/vscode-yaml/releases/download/0.5.3-beta/vscode-yaml.vsix"
+                dest "${buildDir}/test-extensions/redhat.vscode-yaml-0.5.3-beta.vsix"
+            }
+            download.run {
+                src "https://github.com/microsoft/vscode-go/releases/download/0.11.6/Go-0.11.6.vsix"
+                dest "${buildDir}/test-extensions/ms-vscode.Go-0.11.6.vsix"
+            }
+            download.run {
+                src "https://github.com/microsoft/vscode-go/releases/download/0.11.7/Go-0.11.7.vsix"
+                dest "${buildDir}/test-extensions/ms-vscode.Go-0.11.7.vsix"
+            }
+            download.run {
+                src "https://github.com/microsoft/vscode-go/releases/download/0.11.8/Go-0.11.8.vsix"
+                dest "${buildDir}/test-extensions/ms-vscode.Go-0.11.8.vsix"
+            }
+            download.run {
+                src "https://github.com/microsoft/vscode-mssql/releases/download/v1.4.0/mssql-1.4.0-ubuntu.16.04-x64.vsix"
+                dest "${buildDir}/test-extensions/ms-mssql.mssql-1.4.0.vsix"
+            }
+            download.run {
+                src "https://github.com/microsoft/vscode-mssql/releases/download/v1.5.0-alpha.49/mssql-1.7.0-ubuntu.16.04-x64.vsix"
+                dest "${buildDir}/test-extensions/ms-mssql.mssql-1.5.0-alpha.49.vsix"
+            }
+            download.run {
+                src "https://github.com/PowerShell/vscode-powershell/releases/download/v2019.9.0/PowerShell-2019.9.0.vsix"
+                dest "${buildDir}/test-extensions/ms-vscode.powershell-2019.9.0.vsix"
+            }
+            download.run {
+                src "https://github.com/PowerShell/vscode-powershell/releases/download/v2019.11.0/PowerShell-2019.11.0.vsix"
+                dest "${buildDir}/test-extensions/ms-vscode.powershell-2019.11.0.vsix"
+            }
+            download.run {
+                src "https://github.com/DotJoshJohnson/vscode-xml/releases/download/v2.5.0/xml-2.5.0.vsix"
+                dest "${buildDir}/test-extensions/DotJoshJohnson.xml-2.5.0.vsix"
+            }
+            download.run {
+                src "https://github.com/xsburg/vscode-javascript-booster/releases/download/v0.11.0/vscode-javascript-booster-0.11.0.vsix"
+                dest "${buildDir}/test-extensions/sburg.vscode-javascript-booster-0.11.0.vsix"
+            }
+            download.run {
+                src "https://github.com/formulahendry/vscode-auto-close-tag/releases/download/0.5.5/auto-close-tag-0.5.5.vsix"
+                dest "${buildDir}/test-extensions/formulahendry.auto-close-tag-0.5.5.vsix"
+            }
+            download.run {
+                src "https://github.com/VSCodeVim/Vim/releases/download/v1.19.3/vim-1.19.3.vsix"
+                dest "${buildDir}/test-extensions/vim-1.19.3.vsix"
+            }
+        }
+    }
+kind: ConfigMap
+metadata:
+  labels:
+    io.kompose.service: server
+  name: server-cm0

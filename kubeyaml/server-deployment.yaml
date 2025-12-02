@@ -1,0 +1,51 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  annotations:
+    kompose.cmd: C:\Users\mikie\AppData\Local\Microsoft\WinGet\Packages\Kubernetes.kompose_Microsoft.Winget.Source_8wekyb3d8bbwe\kompose.exe convert -f ..\docker-compose.yml
+    kompose.version: 1.37.0 (fb0539e64)
+  labels:
+    io.kompose.service: server
+  name: server
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      io.kompose.service: server
+  strategy:
+    type: Recreate
+  template:
+    metadata:
+      annotations:
+        kompose.cmd: C:\Users\mikie\AppData\Local\Microsoft\WinGet\Packages\Kubernetes.kompose_Microsoft.Winget.Source_8wekyb3d8bbwe\kompose.exe convert -f ..\docker-compose.yml
+        kompose.version: 1.37.0 (fb0539e64)
+      labels:
+        io.kompose.service: server
+    spec:
+      containers:
+        - args:
+            - sh
+            - -c
+            - scripts/generate-properties.sh --docker && ./gradlew assemble && ./gradlew runServer
+          image: eclipse-temurin:25-jdk
+          livenessProbe:
+            exec:
+              command:
+                - curl --fail --silent localhost:8081/actuator/health | grep UP || exit 1
+            failureThreshold: 50
+            initialDelaySeconds: 5
+            periodSeconds: 10
+            timeoutSeconds: 5
+          name: server
+          ports:
+            - containerPort: 8080
+              protocol: TCP
+          volumeMounts:
+            - mountPath: /app
+              name: server-cm0
+          workingDir: /app
+      restartPolicy: Always
+      volumes:
+        - configMap:
+            name: server-cm0
+          name: server-cm0

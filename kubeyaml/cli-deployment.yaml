@@ -1,0 +1,43 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  annotations:
+    kompose.cmd: C:\Users\mikie\AppData\Local\Microsoft\WinGet\Packages\Kubernetes.kompose_Microsoft.Winget.Source_8wekyb3d8bbwe\kompose.exe convert -f ..\docker-compose.yml
+    kompose.version: 1.37.0 (fb0539e64)
+  labels:
+    io.kompose.service: cli
+  name: cli
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      io.kompose.service: cli
+  strategy:
+    type: Recreate
+  template:
+    metadata:
+      annotations:
+        kompose.cmd: C:\Users\mikie\AppData\Local\Microsoft\WinGet\Packages\Kubernetes.kompose_Microsoft.Winget.Source_8wekyb3d8bbwe\kompose.exe convert -f ..\docker-compose.yml
+        kompose.version: 1.37.0 (fb0539e64)
+      labels:
+        io.kompose.service: cli
+    spec:
+      containers:
+        - args:
+            - sh
+            - -c
+            - yarn && yarn watch
+          env:
+            - name: OVSX_REGISTRY_URL
+              value: http://server:8080
+          image: node:18
+          name: cli
+          volumeMounts:
+            - mountPath: /app
+              name: cli-cm0
+          workingDir: /app
+      restartPolicy: Always
+      volumes:
+        - configMap:
+            name: cli-cm0
+          name: cli-cm0

@@ -1,0 +1,64 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  annotations:
+    kompose.cmd: C:\Users\mikie\AppData\Local\Microsoft\WinGet\Packages\Kubernetes.kompose_Microsoft.Winget.Source_8wekyb3d8bbwe\kompose.exe convert -f ..\docker-compose.yml
+    kompose.version: 1.37.0 (fb0539e64)
+  labels:
+    io.kompose.service: redis-node-1
+  name: redis-node-1
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      io.kompose.service: redis-node-1
+  strategy:
+    type: Recreate
+  template:
+    metadata:
+      annotations:
+        kompose.cmd: C:\Users\mikie\AppData\Local\Microsoft\WinGet\Packages\Kubernetes.kompose_Microsoft.Winget.Source_8wekyb3d8bbwe\kompose.exe convert -f ..\docker-compose.yml
+        kompose.version: 1.37.0 (fb0539e64)
+      labels:
+        io.kompose.service: redis-node-1
+    spec:
+      containers:
+        - args:
+            - redis-server
+            - /etc/redis.conf
+          env:
+            - name: REDISCLI_AUTH
+              value: openvsx
+          image: redis:7.2
+          livenessProbe:
+            exec:
+              command:
+                - redis-cli
+                - -p
+                - "7000"
+                - --user
+                - openvsx
+                - ping
+            failureThreshold: 5
+            periodSeconds: 5
+          name: redis-node-1
+          ports:
+            - containerPort: 7000
+              protocol: TCP
+          volumeMounts:
+            - mountPath: /etc/redis.conf
+              name: redis-node-1-cm0
+              subPath: redis.conf
+            - mountPath: /data
+              name: redis-node-1-claim1
+      restartPolicy: Always
+      volumes:
+        - configMap:
+            items:
+              - key: redis.conf
+                path: redis.conf
+            name: redis-node-1-cm0
+          name: redis-node-1-cm0
+        - name: redis-node-1-claim1
+          persistentVolumeClaim:
+            claimName: redis-node-1-claim1
